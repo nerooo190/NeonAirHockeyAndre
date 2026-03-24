@@ -1,0 +1,785 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Neon Air Hockey Pro</title>
+    <style>
+        :root {
+            --p1-color: #ff0055;
+            --cpu-color: #00ddff;
+            --table-color: #00ffcc;
+        }
+
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #050510;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            touch-action: none;
+            color: white;
+            user-select: none;
+        }
+
+        #game-container {
+            width: 100vw;
+            height: 100vh;
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 1;
+        }
+
+        /* UI Overlays */
+        .overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 20;
+            background: rgba(5, 5, 16, 0.85);
+            backdrop-filter: blur(5px);
+            transition: opacity 0.3s;
+        }
+
+        .hidden {
+            display: none !important;
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        h1, h2 {
+            text-transform: uppercase;
+            letter-spacing: 4px;
+            text-align: center;
+        }
+
+        h1 {
+            font-size: 4rem;
+            margin-bottom: 40px;
+            color: #fff;
+            text-shadow: 0 0 10px var(--p1-color), 0 0 20px var(--cpu-color);
+        }
+
+        /* Buttons */
+        .btn {
+            padding: 15px 40px;
+            margin: 10px;
+            font-size: 1.5rem;
+            font-weight: bold;
+            background: rgba(0, 0, 0, 0.5);
+            color: #fff;
+            border: 2px solid var(--table-color);
+            border-radius: 8px;
+            cursor: pointer;
+            text-transform: uppercase;
+            box-shadow: 0 0 10px inset var(--table-color), 0 0 10px var(--table-color);
+            transition: all 0.2s;
+            width: 300px;
+        }
+
+        .btn:hover {
+            background: var(--table-color);
+            color: #000;
+            box-shadow: 0 0 20px var(--table-color), 0 0 40px var(--table-color);
+        }
+
+        /* Settings Form */
+        .settings-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            background: rgba(255, 255, 255, 0.05);
+            padding: 30px;
+            border-radius: 15px;
+            border: 1px solid rgba(255,255,255,0.1);
+            margin-bottom: 30px;
+            max-width: 600px;
+        }
+
+        .setting-item {
+            display: flex;
+            flex-direction: column;
+        }
+
+        label {
+            font-size: 1rem;
+            margin-bottom: 8px;
+            color: #ccc;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        select, input[type="color"] {
+            padding: 10px;
+            background: #111;
+            color: white;
+            border: 1px solid #444;
+            border-radius: 5px;
+            font-size: 1.1rem;
+            outline: none;
+            cursor: pointer;
+        }
+
+        input[type="color"] {
+            height: 50px;
+            width: 100%;
+            padding: 0;
+            border: none;
+        }
+
+        /* Game HUD */
+        #hud {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 10;
+        }
+
+        .score-board {
+            display: flex;
+            justify-content: space-between;
+            padding: 20px 50px;
+            font-size: 3.5rem;
+            font-weight: 900;
+        }
+
+        .score {
+            text-shadow: 0 0 15px currentColor, 0 0 30px currentColor;
+        }
+
+        #score-p1 { color: var(--p1-color); }
+        #score-cpu { color: var(--cpu-color); }
+
+        #goal-announcer {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 5rem;
+            font-weight: bold;
+            color: white;
+            text-transform: uppercase;
+            text-shadow: 0 0 20px white;
+            opacity: 0;
+            transition: opacity 0.2s;
+        }
+
+        #btn-pause {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            padding: 10px 20px;
+            font-size: 1rem;
+            pointer-events: auto;
+            width: auto;
+        }
+    </style>
+    <!-- Three.js laden -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+</head>
+<body>
+
+    <!-- HUD (Heads Up Display während des Spiels) -->
+    <div id="hud" class="hidden">
+        <div class="score-board">
+            <div class="score" id="score-cpu">0</div>
+            <div class="score" id="score-p1">0</div>
+        </div>
+        <div id="goal-announcer">TOR!</div>
+        <button class="btn" id="btn-pause">Pause / Menü</button>
+    </div>
+
+    <!-- Hauptmenü -->
+    <div id="menu-main" class="overlay">
+        <h1>Neon Air Hockey</h1>
+        <button class="btn" id="btn-play">Spielen</button>
+        <button class="btn" id="btn-settings">Einstellungen & Regeln</button>
+    </div>
+
+    <!-- Einstellungen & Regeln Menü -->
+    <div id="menu-settings" class="overlay hidden">
+        <h2>Einstellungen & Regeln</h2>
+        
+        <div class="settings-grid">
+            <!-- Regeln -->
+            <div class="setting-item">
+                <label>Max. Tore</label>
+                <select id="set-goals">
+                    <option value="3">3 Tore</option>
+                    <option value="5" selected>5 Tore</option>
+                    <option value="7">7 Tore</option>
+                    <option value="10">10 Tore</option>
+                    <option value="0">Endlos</option>
+                </select>
+            </div>
+            
+            <div class="setting-item">
+                <label>Schwierigkeitsgrad (CPU)</label>
+                <select id="set-diff">
+                    <option value="0.05">Leicht</option>
+                    <option value="0.12" selected>Mittel</option>
+                    <option value="0.25">Schwer</option>
+                </select>
+            </div>
+
+            <div class="setting-item">
+                <label>Puck Geschwindigkeit</label>
+                <select id="set-speed">
+                    <option value="1.8">Langsam</option>
+                    <option value="2.8" selected>Normal</option>
+                    <option value="4.0">Extrem</option>
+                </select>
+            </div>
+
+            <div class="setting-item">
+                <label>Neon Spielfeld Farbe</label>
+                <input type="color" id="color-table" value="#00ffcc">
+            </div>
+
+            <!-- RGB Farben -->
+            <div class="setting-item">
+                <label>Deine Farbe (Spieler 1)</label>
+                <input type="color" id="color-p1" value="#ff0055">
+            </div>
+
+            <div class="setting-item">
+                <label>Gegner Farbe (CPU)</label>
+                <input type="color" id="color-cpu" value="#00ddff">
+            </div>
+        </div>
+
+        <button class="btn" id="btn-back">Zurück</button>
+    </div>
+
+    <!-- Game Over Screen -->
+    <div id="menu-gameover" class="overlay hidden">
+        <h1 id="gameover-title">Gewonnen!</h1>
+        <button class="btn" id="btn-rematch">Nochmal Spielen</button>
+        <button class="btn" id="btn-tomenu">Hauptmenü</button>
+    </div>
+
+    <div id="game-container"></div>
+
+    <script>
+        // --- Spiel Status & Regeln ---
+        const gameState = {
+            mode: 'MENU', // MENU, PLAYING, SCORED, GAMEOVER, PAUSED
+            scores: { player: 0, cpu: 0 },
+            rules: {
+                maxGoals: 5,
+                cpuSpeed: 0.12,
+                maxPuckSpeed: 2.8
+            },
+            colors: {
+                player: '#ff0055',
+                cpu: '#00ddff',
+                table: '#00ffcc'
+            }
+        };
+
+        // --- Konstanten für das Spielfeld ---
+        const tableWidth = 30;
+        const tableLength = 50;
+        const goalWidth = 10;
+        const puckRadius = 1.2;
+        const paddleRadius = 2.0;
+
+        let scene, camera, renderer;
+        let puck, playerPaddle, cpuPaddle, trailLine;
+        let playerLight, cpuLight, tableLight;
+        let puckVelocity = new THREE.Vector3(0, 0, 0);
+        const friction = 0.992;
+        
+        // Trail Array für den Puck-Schweif
+        const trailPositions = [];
+        const maxTrailLength = 15;
+
+        // Referenzen für Materialien, um Farben live zu ändern
+        let playerMat, cpuMat, lineMat, tableMat;
+
+        // DOM Elemente
+        const ui = {
+            main: document.getElementById('menu-main'),
+            settings: document.getElementById('menu-settings'),
+            gameover: document.getElementById('menu-gameover'),
+            hud: document.getElementById('hud'),
+            scoreP1: document.getElementById('score-p1'),
+            scoreCpu: document.getElementById('score-cpu'),
+            announcer: document.getElementById('goal-announcer'),
+            goTitle: document.getElementById('gameover-title')
+        };
+
+        initThreeJS();
+        setupEventListeners();
+
+        // --- Initialisierung ---
+        function initThreeJS() {
+            const container = document.getElementById('game-container');
+            scene = new THREE.Scene();
+            scene.fog = new THREE.FogExp2(0x050510, 0.015);
+
+            camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(0, 40, 45); // Leicht angewinkelt
+            camera.lookAt(0, 0, 0);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            container.appendChild(renderer.domElement);
+
+            // Beleuchtung
+            const ambientLight = new THREE.AmbientLight(0x202040, 1.0);
+            scene.add(ambientLight);
+
+            tableLight = new THREE.PointLight(gameState.colors.table, 1.5, 100);
+            tableLight.position.set(0, 15, 0);
+            scene.add(tableLight);
+
+            playerLight = new THREE.PointLight(gameState.colors.player, 1.2, 50);
+            scene.add(playerLight); // Position wird im Loop geupdatet
+
+            cpuLight = new THREE.PointLight(gameState.colors.cpu, 1.2, 50);
+            scene.add(cpuLight);
+
+            // Materialien erstellen
+            tableMat = new THREE.MeshStandardMaterial({ color: 0x0a0a1a, roughness: 0.1, metalness: 0.8 });
+            const borderMat = new THREE.MeshStandardMaterial({ color: 0x111111, emissive: 0x001122, roughness: 0.5 });
+            lineMat = new THREE.MeshBasicMaterial({ color: gameState.colors.table });
+            const puckMat = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0x444444, roughness: 0.2, metalness: 0.1 });
+            
+            playerMat = new THREE.MeshStandardMaterial({ 
+                color: gameState.colors.player, 
+                emissive: gameState.colors.player,
+                emissiveIntensity: 0.5,
+                roughness: 0.3, metalness: 0.5 
+            });
+            cpuMat = new THREE.MeshStandardMaterial({ 
+                color: gameState.colors.cpu, 
+                emissive: gameState.colors.cpu,
+                emissiveIntensity: 0.5,
+                roughness: 0.3, metalness: 0.5 
+            });
+
+            // Spielfeld bauen
+            const tableGroup = new THREE.Group();
+            
+            // Boden
+            const floorGeo = new THREE.BoxGeometry(tableWidth, 1, tableLength);
+            const floor = new THREE.Mesh(floorGeo, tableMat);
+            floor.position.y = -0.5;
+            floor.receiveShadow = true;
+            tableGroup.add(floor);
+
+            // Linien
+            const centerLineGeo = new THREE.PlaneGeometry(tableWidth - 2, 0.4);
+            const centerLine = new THREE.Mesh(centerLineGeo, lineMat);
+            centerLine.rotation.x = -Math.PI / 2;
+            centerLine.position.y = 0.02;
+            tableGroup.add(centerLine);
+
+            const centerCircleGeo = new THREE.RingGeometry(4, 4.4, 32);
+            const centerCircle = new THREE.Mesh(centerCircleGeo, lineMat);
+            centerCircle.rotation.x = -Math.PI / 2;
+            centerCircle.position.y = 0.02;
+            tableGroup.add(centerCircle);
+
+            // Ränder
+            const borderHeight = 1.5;
+            const borderThickness = 1.5;
+            const createBorder = (w, d, x, z) => {
+                const geo = new THREE.BoxGeometry(w, borderHeight, d);
+                const mesh = new THREE.Mesh(geo, borderMat);
+                mesh.position.set(x, borderHeight/2 - 0.5, z);
+                mesh.castShadow = true; mesh.receiveShadow = true;
+                return mesh;
+            };
+
+            tableGroup.add(createBorder(borderThickness, tableLength + borderThickness*2, -tableWidth/2 - borderThickness/2, 0));
+            tableGroup.add(createBorder(borderThickness, tableLength + borderThickness*2, tableWidth/2 + borderThickness/2, 0));
+            
+            const wallWidth = (tableWidth - goalWidth) / 2;
+            const wallOffsetX = goalWidth/2 + wallWidth/2;
+            const wallZ = tableLength/2 + borderThickness/2;
+
+            tableGroup.add(createBorder(wallWidth, borderThickness, -wallOffsetX, wallZ));
+            tableGroup.add(createBorder(wallWidth, borderThickness, wallOffsetX, wallZ));
+            tableGroup.add(createBorder(wallWidth, borderThickness, -wallOffsetX, -wallZ));
+            tableGroup.add(createBorder(wallWidth, borderThickness, wallOffsetX, -wallZ));
+
+            scene.add(tableGroup);
+
+            // Objekte
+            const puckGeo = new THREE.CylinderGeometry(puckRadius, puckRadius, 0.8, 32);
+            puck = new THREE.Mesh(puckGeo, puckMat);
+            puck.position.y = 0.4;
+            puck.castShadow = true;
+            scene.add(puck);
+
+            // Puck Trail (Schweif)
+            const trailGeo = new THREE.BufferGeometry();
+            trailGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(maxTrailLength * 3), 3));
+            const trailMaterial = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.5, linewidth: 2 });
+            trailLine = new THREE.Line(trailGeo, trailMaterial);
+            scene.add(trailLine);
+
+            const paddleGeo = new THREE.CylinderGeometry(paddleRadius, paddleRadius, 1.5, 32);
+            
+            playerPaddle = new THREE.Mesh(paddleGeo, playerMat);
+            playerPaddle.position.set(0, 0.75, 15);
+            playerPaddle.castShadow = true;
+            playerPaddle.userData = { lastPosition: new THREE.Vector3(), velocity: new THREE.Vector3() };
+            scene.add(playerPaddle);
+
+            cpuPaddle = new THREE.Mesh(paddleGeo, cpuMat);
+            cpuPaddle.position.set(0, 0.75, -15);
+            cpuPaddle.castShadow = true;
+            cpuPaddle.userData = { lastPosition: new THREE.Vector3(), velocity: new THREE.Vector3() };
+            scene.add(cpuPaddle);
+
+            // Raycaster für Input
+            const raycaster = new THREE.Raycaster();
+            const mouse = new THREE.Vector2();
+            const dragPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+            const intersectPoint = new THREE.Vector3();
+
+            function updateMousePos(clientX, clientY) {
+                if (gameState.mode !== 'PLAYING') return;
+                
+                mouse.x = (clientX / window.innerWidth) * 2 - 1;
+                mouse.y = -(clientY / window.innerHeight) * 2 + 1;
+
+                raycaster.setFromCamera(mouse, camera);
+                raycaster.ray.intersectPlane(dragPlane, intersectPoint);
+
+                const minX = -tableWidth/2 + paddleRadius;
+                const maxX = tableWidth/2 - paddleRadius;
+                const minZ = paddleRadius + 0.2; // Darf Linie nicht überqueren
+                const maxZ = tableLength/2 - paddleRadius;
+
+                playerPaddle.position.x = Math.max(minX, Math.min(maxX, intersectPoint.x));
+                playerPaddle.position.z = Math.max(minZ, Math.min(maxZ, intersectPoint.z));
+            }
+
+            window.addEventListener('mousemove', (e) => updateMousePos(e.clientX, e.clientY));
+            window.addEventListener('touchmove', (e) => {
+                if(e.touches.length > 0) updateMousePos(e.touches[0].clientX, e.touches[0].clientY);
+            }, {passive: false});
+
+            window.addEventListener('resize', () => {
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(window.innerWidth, window.innerHeight);
+            });
+
+            // Start Render Loop
+            animate();
+        }
+
+        // --- Menü Logik & Event Listener ---
+        function setupEventListeners() {
+            document.getElementById('btn-play').onclick = startGame;
+            document.getElementById('btn-rematch').onclick = startGame;
+            
+            document.getElementById('btn-settings').onclick = () => {
+                ui.main.classList.add('hidden');
+                ui.settings.classList.remove('hidden');
+            };
+
+            document.getElementById('btn-back').onclick = () => {
+                applySettings();
+                ui.settings.classList.add('hidden');
+                ui.main.classList.remove('hidden');
+            };
+
+            document.getElementById('btn-tomenu').onclick = () => {
+                ui.gameover.classList.add('hidden');
+                ui.main.classList.remove('hidden');
+                gameState.mode = 'MENU';
+            };
+
+            document.getElementById('btn-pause').onclick = () => {
+                gameState.mode = 'MENU';
+                ui.hud.classList.add('hidden');
+                ui.main.classList.remove('hidden');
+            };
+
+            // Farb-Änderungen in Echtzeit anwenden
+            const colorInputs = ['color-p1', 'color-cpu', 'color-table'];
+            colorInputs.forEach(id => {
+                document.getElementById(id).addEventListener('input', applySettingsLive);
+            });
+        }
+
+        function applySettingsLive() {
+            // Farben updaten
+            gameState.colors.player = document.getElementById('color-p1').value;
+            gameState.colors.cpu = document.getElementById('color-cpu').value;
+            gameState.colors.table = document.getElementById('color-table').value;
+
+            // CSS Variablen updaten (für UI)
+            document.documentElement.style.setProperty('--p1-color', gameState.colors.player);
+            document.documentElement.style.setProperty('--cpu-color', gameState.colors.cpu);
+            document.documentElement.style.setProperty('--table-color', gameState.colors.table);
+
+            // Three.js Materialien updaten
+            playerMat.color.set(gameState.colors.player);
+            playerMat.emissive.set(gameState.colors.player);
+            cpuMat.color.set(gameState.colors.cpu);
+            cpuMat.emissive.set(gameState.colors.cpu);
+            lineMat.color.set(gameState.colors.table);
+            tableLight.color.set(gameState.colors.table);
+        }
+
+        function applySettings() {
+            applySettingsLive();
+            gameState.rules.maxGoals = parseInt(document.getElementById('set-goals').value);
+            gameState.rules.cpuSpeed = parseFloat(document.getElementById('set-diff').value);
+            gameState.rules.maxPuckSpeed = parseFloat(document.getElementById('set-speed').value);
+        }
+
+        function startGame() {
+            applySettings();
+            ui.main.classList.add('hidden');
+            ui.gameover.classList.add('hidden');
+            ui.hud.classList.remove('hidden');
+            
+            gameState.scores.player = 0;
+            gameState.scores.cpu = 0;
+            updateScoreUI();
+            
+            playerPaddle.position.set(0, 0.75, 15);
+            cpuPaddle.position.set(0, 0.75, -15);
+            
+            servePuck('center');
+        }
+
+        // --- Spiel Logik ---
+        function servePuck(scorer) {
+            gameState.mode = 'SCORED'; // Pausiert Bewegung kurz
+            
+            puck.position.set(0, 0.4, 0); // Puck in die Mitte
+            puckVelocity.set(0, 0, 0);
+            
+            // Lichter normalisieren
+            tableLight.intensity = 1.5;
+            tableLight.color.set(gameState.colors.table);
+            
+            setTimeout(() => {
+                if (gameState.mode !== 'MENU') {
+                    gameState.mode = 'PLAYING';
+                    // Puck leicht in Richtung des Verlierers stoßen, damit es weitergeht!
+                    const direction = scorer === 'player' ? 1 : -1;
+                    puckVelocity.set((Math.random() - 0.5) * 1.5, 0, direction * 1.0);
+                }
+            }, 1500);
+        }
+
+        function handleGoal(scorer) {
+            gameState.mode = 'SCORED';
+            gameState.scores[scorer]++;
+            updateScoreUI();
+
+            // Visuelles Feedback (Neon Blinken)
+            ui.announcer.style.opacity = 1;
+            tableLight.color.set(scorer === 'player' ? gameState.colors.player : gameState.colors.cpu);
+            tableLight.intensity = 3.0;
+
+            setTimeout(() => { ui.announcer.style.opacity = 0; }, 1000);
+
+            // Check Win Condition
+            if (gameState.rules.maxGoals > 0 && gameState.scores[scorer] >= gameState.rules.maxGoals) {
+                setTimeout(() => endGame(scorer), 1500);
+            } else {
+                servePuck(scorer === 'player' ? 'cpu' : 'player'); // Verlierer bekommt den Ball
+            }
+        }
+
+        function updateScoreUI() {
+            ui.scoreP1.innerText = gameState.scores.player;
+            ui.scoreCpu.innerText = gameState.scores.cpu;
+        }
+
+        function endGame(winner) {
+            gameState.mode = 'GAMEOVER';
+            ui.hud.classList.add('hidden');
+            ui.gameover.classList.remove('hidden');
+            
+            if(winner === 'player') {
+                ui.goTitle.innerText = "GEWONNEN!";
+                ui.goTitle.style.color = gameState.colors.player;
+                ui.goTitle.style.textShadow = `0 0 20px ${gameState.colors.player}`;
+            } else {
+                ui.goTitle.innerText = "VERLOREN!";
+                ui.goTitle.style.color = gameState.colors.cpu;
+                ui.goTitle.style.textShadow = `0 0 20px ${gameState.colors.cpu}`;
+            }
+        }
+
+        function resolveCollision(paddle, isPlayer) {
+            const dx = puck.position.x - paddle.position.x;
+            const dz = puck.position.z - paddle.position.z;
+            const distance = Math.sqrt(dx*dx + dz*dz);
+            const minDist = puckRadius + paddleRadius;
+
+            if (distance < minDist) {
+                const nx = dx / distance;
+                const nz = dz / distance;
+
+                // Verhindert Steckenbleiben
+                const overlap = minDist - distance;
+                puck.position.x += nx * overlap;
+                puck.position.z += nz * overlap;
+
+                paddle.userData.velocity.subVectors(paddle.position, paddle.userData.lastPosition);
+
+                // Reflektieren
+                const dotProduct = puckVelocity.x * nx + puckVelocity.z * nz;
+                puckVelocity.x -= 2 * dotProduct * nx;
+                puckVelocity.z -= 2 * dotProduct * nz;
+
+                // Energie vom Schläger übertragen
+                const energyTransfer = 0.7;
+                puckVelocity.x += paddle.userData.velocity.x * energyTransfer;
+                puckVelocity.z += paddle.userData.velocity.z * energyTransfer;
+
+                // Mindestgeschwindigkeit bei Treffer
+                const minBounce = 0.5;
+                puckVelocity.x += nx * minBounce;
+                puckVelocity.z += nz * minBounce;
+            }
+        }
+
+        function updatePhysics() {
+            if (gameState.mode !== 'PLAYING') return;
+
+            // Letzte Positionen speichern (für Geschwindigkeitsberechnung)
+            playerPaddle.userData.lastPosition.copy(playerPaddle.position);
+            cpuPaddle.userData.lastPosition.copy(cpuPaddle.position);
+
+            // --- CPU KI ---
+            const cpuMinX = -tableWidth/2 + paddleRadius;
+            const cpuMaxX = tableWidth/2 - paddleRadius;
+            const cpuMinZ = -tableLength/2 + paddleRadius;
+            const cpuMaxZ = -paddleRadius - 0.2;
+
+            let targetX = 0;
+            let targetZ = -18; // Standard Verteidigungsposition
+
+            // Reagiert nur, wenn Puck auf ihrer Hälfte oder nah dran ist
+            if (puck.position.z < 8) { 
+                targetX = puck.position.x;
+                if (puck.position.z < cpuPaddle.position.z) {
+                    // Puck ist hinter KI -> schnell zurück!
+                    targetZ = Math.max(cpuMinZ, puck.position.z - 3);
+                } else {
+                    // Abfangen
+                    targetZ = Math.min(cpuMaxZ, puck.position.z - 2);
+                }
+            }
+
+            // Bewegung interpolieren basierend auf Difficulty
+            cpuPaddle.position.x += (targetX - cpuPaddle.position.x) * gameState.rules.cpuSpeed;
+            cpuPaddle.position.z += (targetZ - cpuPaddle.position.z) * gameState.rules.cpuSpeed;
+            
+            // KI in Schranken halten
+            cpuPaddle.position.x = Math.max(cpuMinX, Math.min(cpuMaxX, cpuPaddle.position.x));
+            cpuPaddle.position.z = Math.max(cpuMinZ, Math.min(cpuMaxZ, cpuPaddle.position.z));
+
+            // --- Puck Physik ---
+            puck.position.x += puckVelocity.x;
+            puck.position.z += puckVelocity.z;
+
+            puckVelocity.multiplyScalar(friction);
+
+            // Max Geschwindigkeit limitieren
+            if (puckVelocity.length() > gameState.rules.maxPuckSpeed) {
+                puckVelocity.normalize().multiplyScalar(gameState.rules.maxPuckSpeed);
+            }
+
+            // Wandkollisionen
+            const boundX = tableWidth/2 - puckRadius;
+            const boundZ = tableLength/2 - puckRadius;
+            const goalHalfWidth = goalWidth/2 - puckRadius + 0.5;
+
+            // X Wände
+            if (puck.position.x > boundX) {
+                puck.position.x = boundX;
+                puckVelocity.x *= -0.8;
+            } else if (puck.position.x < -boundX) {
+                puck.position.x = -boundX;
+                puckVelocity.x *= -0.8;
+            }
+
+            // Z Wände & Tore
+            if (puck.position.z > boundZ) {
+                if (Math.abs(puck.position.x) < goalHalfWidth) {
+                    handleGoal('cpu');
+                } else {
+                    puck.position.z = boundZ;
+                    puckVelocity.z *= -0.8;
+                }
+            } else if (puck.position.z < -boundZ) {
+                if (Math.abs(puck.position.x) < goalHalfWidth) {
+                    handleGoal('player');
+                } else {
+                    puck.position.z = -boundZ;
+                    puckVelocity.z *= -0.8;
+                }
+            }
+
+            // Schläger Kollisionen
+            resolveCollision(playerPaddle, true);
+            resolveCollision(cpuPaddle, false);
+        }
+
+        function updateTrail() {
+            if (gameState.mode !== 'PLAYING') return;
+
+            // Neue Position am Anfang einfügen
+            trailPositions.unshift(puck.position.x, 0.4, puck.position.z);
+            
+            // Array bei Bedarf kürzen
+            if (trailPositions.length > maxTrailLength * 3) {
+                trailPositions.length = maxTrailLength * 3;
+            }
+
+            // Geometrie aktualisieren
+            const positions = trailLine.geometry.attributes.position.array;
+            for (let i = 0; i < trailPositions.length; i++) {
+                positions[i] = trailPositions[i];
+            }
+            
+            trailLine.geometry.attributes.position.needsUpdate = true;
+            trailLine.geometry.setDrawRange(0, trailPositions.length / 3);
+        }
+
+        // --- Haupt Render Loop ---
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            // Physik und Trail nur berechnen, wenn gespielt wird
+            if (gameState.mode === 'PLAYING') {
+                updatePhysics();
+                updateTrail();
+            }
+
+            // Lichter an Paddles heften
+            playerLight.position.set(playerPaddle.position.x, 5, playerPaddle.position.z);
+            cpuLight.position.set(cpuPaddle.position.x, 5, cpuPaddle.position.z);
+
+            renderer.render(scene, camera);
+        }
+    </script>
+</body>
+</html>
